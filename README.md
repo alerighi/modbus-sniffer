@@ -8,10 +8,22 @@ a program like Wireshark.
 
 ## Usage
 
-Compile the program with `make`. This program doesn't currently have
-CLI arguments. To edit the parameters you must edit the source file
-`sniffer.c`, in particular the serial port path and the relative, and
-the capture output directory.
+Compile the program with `make`. The only dependency is a C compiler
+and a POSIX operating system.
+
+You can specify the options with the command line:
+
+```
+Usage: -p [-h] [-o out_dir] [-p port] [-s speed]
+          [-P parity] [-S stop_bits] [-b bits]
+
+ -o, --output-dir   directory where to save the output
+ -p, --serial-port  serial port to use
+ -s, --speed        serial port speed (default 9600)
+ -b, --bits         number of bits (default 8)
+ -P, --parity       parity to use (default 'N')
+ -S, --stop-bits    stop bits to use (default 1)
+```
 
 By default files are saved in the output directory with filename in
 the format `modbus_YYYY-mm-dd_HH:MM:SS.pcap`.

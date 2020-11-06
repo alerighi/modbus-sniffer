@@ -16,11 +16,9 @@
 #include <string.h>
 #include <stdint.h>
 #include <errno.h>
+#include <getopt.h>
 
 #define DIE(err) do { perror(err); exit(EXIT_FAILURE); } while (0)
-
-#define SERIAL_PORT "/dev/ttyAMA0"
-#define CAPTURE_DIR "/tmp/sniffer/"
 
 /*
  * how much to wait between a byte and another
@@ -38,6 +36,25 @@
  * 10.000 seems a reasonable number here
  */
 #define MAX_CAPTURE_FILE_PACKETS 10000
+
+/* CLI params */
+char *serial_port = "/dev/ttyAMA0";
+char *output_dir = "/tmp/sniffer/";
+char parity = 'N';
+int bits = 8;
+int speed = 9600;
+int stop_bits = 1;
+
+struct option long_options[] = {
+    { "serial-port", required_argument, NULL, 'p' },
+    { "output-dir",  required_argument, NULL, 'o' },
+    { "speed",       required_argument, NULL, 's' },
+    { "parity",      required_argument, NULL, 'P' },
+    { "bits",        required_argument, NULL, 'b' },
+    { "stop-bits",   required_argument, NULL, 'S' },
+    { "help",        no_argument,       NULL, 'h' },
+    { NULL,          0,                 NULL,  0  },
+};
 
 volatile int rotate_log = 1;
 
@@ -110,6 +127,58 @@ void crc_check(char *buffer, int length)
    printf("CRC: %04X = %02X%02X [%s]\n", crc, buffer[1], buffer[0], valid_crc ? "OK" : "FAIL");
 }
 
+void usage(FILE *fp, char *progname, int exit_code)
+{
+    int n;
+
+    fprintf(fp, "Usage: %s %n[-h] [-o out_dir] [-p port] [-s speed]\n", progname, &n);
+    fprintf(fp, "%*c[-P parity] [-S stop_bits] [-b bits]\n\n", n, ' ');
+    fprintf(fp, " -o, --output-dir   directory where to save the output\n");
+    fprintf(fp, " -p, --serial-port  serial port to use\n");
+    fprintf(fp, " -s, --speed        serial port speed (default 9600)\n");
+    fprintf(fp, " -b, --bits         number of bits (default 8)\n");
+    fprintf(fp, " -P, --parity       parity to use (default 'N')\n");
+    fprintf(fp, " -S, --stop-bits    stop bits to use (default 1)\n\n");
+
+    exit(exit_code);
+}
+
+void parse_args(int argc, char **argv)
+{
+    int opt;
+
+    while ((opt = getopt_long(argc, argv, "ho:p:s:P:S:b:", long_options, NULL)) >= 0) {
+        switch (opt) {
+        case 'o':
+            output_dir = optarg;
+            break;
+        case 'p':
+            serial_port = optarg;
+            break;
+        case 's':
+            speed = atoi(optarg);
+            break;
+        case 'b':
+            bits = atoi(optarg);
+            break;
+        case 'P':
+            parity = optarg[0];
+            break;
+        case 'S':
+            stop_bits = atoi(optarg);
+            break;
+        case 'h':
+            usage(stdout, argv[0], EXIT_SUCCESS);
+        default:
+            usage(stderr, argv[1], EXIT_FAILURE);
+        }
+    }
+
+    printf("output directory: %s\n", output_dir);
+    printf("serial port: %s\n", serial_port);
+    printf("port type: %d%c%d %d baud\n", bits, parity, stop_bits, speed);
+}
+
 /* https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp */
 void configure_serial_port(int fd)
 {
@@ -118,14 +187,31 @@ void configure_serial_port(int fd)
     if (tcgetattr(fd, &tty) < 0)
         DIE("tcgetattr");
 
-    /* clear parity bit */
-    tty.c_cflag &= ~PARENB;
+    /* set parity */
+    if (parity == 'N')
+        tty.c_cflag &= ~PARENB;
 
-    /* clear stop field */
-    tty.c_cflag &= ~CSTOPB;
+    if (parity == 'E')
+        tty.c_cflag |= PARENB;
 
-    /* 8 bits per byte */
-    tty.c_cflag |= CS8;
+    if (parity == 'O')
+        tty.c_cflag |= PARODD | PARENB;
+
+    /* set stop bits */
+    if (stop_bits == 2)
+        tty.c_cflag |= CSTOPB;
+    else
+        tty.c_cflag &= ~CSTOPB;
+
+    /* set bits */
+    tty.c_cflag &= ~CSIZE;
+
+    switch (bits) {
+    case 5: tty.c_cflag |= CS5; break;
+    case 6: tty.c_cflag |= CS6; break;
+    case 7: tty.c_cflag |= CS7; break;
+    default: tty.c_cflag |= CS8; break;
+    }
 
     /* disable RTS/CTS hardware flow control */
     tty.c_cflag &= ~CRTSCTS;
@@ -175,8 +261,8 @@ void configure_serial_port(int fd)
     tty.c_cc[VMIN] = 0;
 
     /* set port speed */
-    cfsetispeed(&tty, B9600);
-    cfsetospeed(&tty, B9600);
+    cfsetispeed(&tty, speed);
+    cfsetospeed(&tty, speed);
 
     if (tcsetattr(fd, TCSANOW, &tty) < 0)
         DIE("tcsetattr");
@@ -219,12 +305,14 @@ int open_logfile()
     int fd;
     time_t t;
     struct tm *l;
+    char filename[PATH_MAX];
     char path[PATH_MAX];
 
     t = time(NULL);
     l = localtime(&t);
 
-    strftime(path, PATH_MAX, CAPTURE_DIR "modbus_%Y-%m-%d_%H_%M_%S.pcap", l);
+    strftime(filename, PATH_MAX, "modbus_%Y-%m-%d_%H_%M_%S.pcap", l);
+    snprintf(path, PATH_MAX, "%s/%s", output_dir, filename);
 
     printf("opening logfile: %s\n", path);
 
@@ -250,9 +338,11 @@ int main(int argc, char **argv)
 
     signal(SIGUSR1, signal_handler);
 
+    parse_args(argc, argv);
+
     puts("starting modbus sniffer");
 
-    if ((port = open(SERIAL_PORT, O_RDONLY)) < 0)
+    if ((port = open(serial_port, O_RDONLY)) < 0)
         DIE("open port");
 
     configure_serial_port(port);
@@ -261,7 +351,7 @@ int main(int argc, char **argv)
         if (rotate_log) {
             rotate_log = 0;
 
-            if (close(log_fd) < -1)
+            if (log_fd > 0 && close(log_fd) < -1)
                 DIE("close pcap");
 
             log_fd = open_logfile();
