@@ -170,7 +170,7 @@ void parse_args(int argc, char **argv)
         case 'h':
             usage(stdout, argv[0], EXIT_SUCCESS);
         default:
-            usage(stderr, argv[1], EXIT_FAILURE);
+            usage(stderr, argv[0], EXIT_FAILURE);
         }
     }
 

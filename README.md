@@ -14,8 +14,8 @@ and a POSIX operating system.
 You can specify the options with the command line:
 
 ```
-Usage: -p [-h] [-o out_dir] [-p port] [-s speed]
-          [-P parity] [-S stop_bits] [-b bits]
+Usage: ./sniffer [-h] [-o out_dir] [-p port] [-s speed]
+                 [-P parity] [-S stop_bits] [-b bits]
 
  -o, --output-dir   directory where to save the output
  -p, --serial-port  serial port to use
@@ -31,7 +31,7 @@ the format `modbus_YYYY-mm-dd_HH:MM:SS.pcap`.
 By sending to the program a `SIGUSR1` the capture is rotated, i.e. the pcap
 file is closed and another one is initiated. By default a .pcap file contains
 maximum 10000 entries: after that the log is rotate. You can tweak this parameter
-by editing the `MAX_CAPTURE_FILE_PACKETS` in the source code. 
+by editing the `MAX_CAPTURE_FILE_PACKETS` in the source code.
 
 To capture the packets, you need a standard RS485 to TTL serial converter.
 I tested the capture on a Raspberry Pi model 3B+. If you also use
