@@ -307,17 +307,25 @@ int open_logfile()
     struct tm *l;
     char filename[PATH_MAX];
     char path[PATH_MAX];
+    char latest_path[PATH_MAX];
 
     t = time(NULL);
     l = localtime(&t);
 
     strftime(filename, PATH_MAX, "modbus_%Y-%m-%d_%H_%M_%S.pcap", l);
     snprintf(path, PATH_MAX, "%s/%s", output_dir, filename);
+    snprintf(path, PATH_MAX, "%s/latest.pcap", output_dir);
 
     printf("opening logfile: %s\n", path);
 
     if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644)) < 0)
         DIE("open pcap");
+
+    if (access(latest_path, F_OK) && unlink(latest_path) < 0)
+        perror("unlink latest.pcap error");
+
+    if (symlink(path, latest_path) < 0)
+        perror("symlink latest.pcap error");
 
     write_global_header(fd);
 
