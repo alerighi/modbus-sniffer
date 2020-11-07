@@ -39,7 +39,7 @@
 
 /* CLI params */
 char *serial_port = "/dev/ttyAMA0";
-char *output_dir = "/tmp/sniffer/";
+char *output_dir = "/tmp/sniffer";
 char parity = 'N';
 int bits = 8;
 int speed = 9600;
@@ -321,7 +321,7 @@ int open_logfile()
     if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644)) < 0)
         DIE("open pcap");
 
-    if (access(latest_path, F_OK) && unlink(latest_path) < 0)
+    if (access(latest_path, F_OK) == 0 && unlink(latest_path) < 0)
         perror("unlink latest.pcap error");
 
     if (symlink(path, latest_path) < 0)
