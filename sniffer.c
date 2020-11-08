@@ -314,7 +314,7 @@ int open_logfile()
 
     strftime(filename, PATH_MAX, "modbus_%Y-%m-%d_%H_%M_%S.pcap", l);
     snprintf(path, PATH_MAX, "%s/%s", output_dir, filename);
-    snprintf(path, PATH_MAX, "%s/latest.pcap", output_dir);
+    snprintf(latest_path, PATH_MAX, "%s/latest.pcap", output_dir);
 
     printf("opening logfile: %s\n", path);
 
