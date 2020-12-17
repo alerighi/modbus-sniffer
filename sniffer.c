@@ -21,21 +21,9 @@
 #define DIE(err) do { perror(err); exit(EXIT_FAILURE); } while (0)
 
 /*
- * how much to wait between a byte and another
- * Modbus standard specifies a maximum of 1.56ms for 9600 bauds
- */
-#define MODBUS_MAX_BYTES_INTERVAL_US 1560
-
-/*
  * maximum Modbus packet size. By the standard is 300 bytes
  */
 #define MODBUS_MAX_PACKET_SIZE 300
-
-/*
- * maximum number of packet to have in a file
- * 10.000 seems a reasonable number here
- */
-#define MAX_CAPTURE_FILE_PACKETS 10000
 
 /* CLI params */
 char *serial_port = "/dev/ttyAMA0";
@@ -44,6 +32,8 @@ char parity = 'N';
 int bits = 8;
 int speed = 9600;
 int stop_bits = 1;
+int bytes_time_interval_us = 1500;
+int max_packet_per_capture = 10000;
 
 struct option long_options[] = {
     { "serial-port", required_argument, NULL, 'p' },
@@ -52,6 +42,8 @@ struct option long_options[] = {
     { "parity",      required_argument, NULL, 'P' },
     { "bits",        required_argument, NULL, 'b' },
     { "stop-bits",   required_argument, NULL, 'S' },
+    { "interval",    required_argument, NULL, 't' },
+    { "max-packets", required_argument, NULL, 'm' },
     { "help",        no_argument,       NULL, 'h' },
     { NULL,          0,                 NULL,  0  },
 };
@@ -138,7 +130,9 @@ void usage(FILE *fp, char *progname, int exit_code)
     fprintf(fp, " -s, --speed        serial port speed (default 9600)\n");
     fprintf(fp, " -b, --bits         number of bits (default 8)\n");
     fprintf(fp, " -P, --parity       parity to use (default 'N')\n");
-    fprintf(fp, " -S, --stop-bits    stop bits to use (default 1)\n\n");
+    fprintf(fp, " -S, --stop-bits    stop bits to use (default 1)\n");
+    fprintf(fp, " -t, --interval     time interval between packets (default 1500)\n");
+    fprintf(fp, " -m, --max-packets  maximum number of packets in capture file (default 10000)\n");
 
     exit(exit_code);
 }
@@ -167,6 +161,12 @@ void parse_args(int argc, char **argv)
         case 'S':
             stop_bits = atoi(optarg);
             break;
+        case 't':
+            bytes_time_interval_us = atoi(optarg);
+            break;
+        case 'm':
+            max_packet_per_capture = atoi(optarg);
+            break;
         case 'h':
             usage(stdout, argv[0], EXIT_SUCCESS);
         default:
@@ -177,6 +177,8 @@ void parse_args(int argc, char **argv)
     printf("output directory: %s\n", output_dir);
     printf("serial port: %s\n", serial_port);
     printf("port type: %d%c%d %d baud\n", bits, parity, stop_bits, speed);
+    printf("time interval: %d\n", bytes_time_interval_us);
+    printf("maximum packets in capture: %d", max_packet_per_capture);
 }
 
 /* https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp */
@@ -371,7 +373,7 @@ int main(int argc, char **argv)
 
         /* also these maybe overwritten in Linux */
         timeout.tv_sec = 0;
-        timeout.tv_usec = MODBUS_MAX_BYTES_INTERVAL_US;
+        timeout.tv_usec = bytes_time_interval_us;
 
         if ((res = select(port + 1, &set, NULL, NULL, &timeout)) < 0 && errno != EINTR)
             DIE("select");
@@ -388,7 +390,7 @@ int main(int argc, char **argv)
         if (size > 0 && (res == 0 || size >= MODBUS_MAX_PACKET_SIZE || n_bytes == 0)) {
             printf("captured packet %d: length = %d, ", ++n_packets, size);
 
-            if (n_packets % MAX_CAPTURE_FILE_PACKETS == 0)
+            if (n_packets % max_packet_per_capture == 0)
                 rotate_log = 1;
 
             crc_check(buffer, size);
