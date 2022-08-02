@@ -1,6 +1,7 @@
 /*
  * A sniffer for the Modbus protocol
  * (c) 2020 Alessandro Righi - released under the MIT license
+ * (c) 2021 vheat - released under the MIT license
  */
 
 #define _DEFAULT_SOURCE
@@ -17,6 +18,10 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <linux/serial.h>
+#include <sys/stat.h>
+
 
 #define DIE(err) do { perror(err); exit(EXIT_FAILURE); } while (0)
 
@@ -27,12 +32,12 @@
 
 /* CLI params */
 char *serial_port = "/dev/ttyAMA0";
-char *output_dir = "/tmp/sniffer";
+char *output_dir = "./";
 char parity = 'N';
 int bits = 8;
-int speed = 9600;
+uint32_t speed = 9600;
 int stop_bits = 1;
-int bytes_time_interval_us = 1500;
+uint32_t bytes_time_interval_us = 1500;
 int max_packet_per_capture = 10000;
 
 struct option long_options[] = {
@@ -102,7 +107,7 @@ uint16_t crc16_table[] = {
     0x8201, 0x42C0, 0x4380, 0x8341, 0x4100, 0x81C1, 0x8081, 0x4040,
 };
 
-void crc_check(char *buffer, int length)
+int crc_check(uint8_t *buffer, int length)
 {
     uint8_t byte;
     uint16_t crc = 0xFFFF;
@@ -114,9 +119,56 @@ void crc_check(char *buffer, int length)
       crc ^= crc16_table[byte];
    }
 
-   valid_crc = (crc >> 8) == buffer[1] && (crc & 0xFF) == buffer[0];
+   valid_crc = ((crc >> 8) == (buffer[1] & 0xFF))  && ((crc & 0xFF) == (buffer[0] & 0xFF)) ;
 
-   printf("CRC: %04X = %02X%02X [%s]\n", crc, buffer[1], buffer[0], valid_crc ? "OK" : "FAIL");
+   printf("CRC: %04X = %02X%02X [%s]\n", crc, buffer[1] & 0xFF, buffer[0] & 0xFF, valid_crc ? "OK" : "FAIL");
+   return valid_crc;
+}
+
+/* https://stackoverflow.com/questions/47311500/how-to-efficiently-convert-baudrate-from-int-to-speed-t */ 
+speed_t get_baud(uint32_t baud)
+{
+    switch (baud) {
+    case 9600:
+        return B9600;
+    case 19200:
+        return B19200;
+    case 38400:
+        return B38400;
+    case 57600:
+        return B57600;
+    case 115200:
+        return B115200;
+    case 230400:
+        return B230400;
+    case 460800:
+        return B460800;
+    case 500000:
+        return B500000;
+    case 576000:
+        return B576000;
+    case 921600:
+        return B921600;
+    case 1000000:
+        return B1000000;
+    case 1152000:
+        return B1152000;
+    case 1500000:
+        return B1500000;
+    case 2000000:
+        return B2000000;
+    case 2500000:
+        return B2500000;
+    case 3000000:
+        return B3000000;
+    case 3500000:
+        return B3500000;
+    case 4000000:
+        return B4000000;
+    default: 
+        DIE("ERROR: Baudrate not supported\n");
+	return -1;
+    }
 }
 
 void usage(FILE *fp, char *progname, int exit_code)
@@ -150,7 +202,7 @@ void parse_args(int argc, char **argv)
             serial_port = optarg;
             break;
         case 's':
-            speed = atoi(optarg);
+            speed = strtoul(optarg, NULL, 10);
             break;
         case 'b':
             bits = atoi(optarg);
@@ -162,7 +214,7 @@ void parse_args(int argc, char **argv)
             stop_bits = atoi(optarg);
             break;
         case 't':
-            bytes_time_interval_us = atoi(optarg);
+            bytes_time_interval_us = strtoul(optarg, NULL, 10);
             break;
         case 'm':
             max_packet_per_capture = atoi(optarg);
@@ -178,13 +230,21 @@ void parse_args(int argc, char **argv)
     printf("serial port: %s\n", serial_port);
     printf("port type: %d%c%d %d baud\n", bits, parity, stop_bits, speed);
     printf("time interval: %d\n", bytes_time_interval_us);
-    printf("maximum packets in capture: %d", max_packet_per_capture);
+    printf("maximum packets in capture: %d\n", max_packet_per_capture);
 }
 
 /* https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp */
 void configure_serial_port(int fd)
 {
     struct termios tty;
+    struct serial_struct serial;
+    
+    
+    if (ioctl(fd, TIOCGSERIAL, &serial) < 0)
+        DIE("ioctl get");
+    serial.flags |= ASYNC_LOW_LATENCY;
+    if (ioctl(fd, TIOCSSERIAL, &serial) < 0)
+        DIE("ioctl set");
 
     if (tcgetattr(fd, &tty) < 0)
         DIE("tcgetattr");
@@ -263,8 +323,8 @@ void configure_serial_port(int fd)
     tty.c_cc[VMIN] = 0;
 
     /* set port speed */
-    cfsetispeed(&tty, speed);
-    cfsetospeed(&tty, speed);
+    cfsetispeed(&tty, get_baud(speed));
+    cfsetospeed(&tty, get_baud(speed));
 
     if (tcsetattr(fd, TCSANOW, &tty) < 0)
         DIE("tcsetattr");
@@ -319,6 +379,8 @@ int open_logfile()
     snprintf(latest_path, PATH_MAX, "%s/latest.pcap", output_dir);
 
     printf("opening logfile: %s\n", path);
+    
+    mkdir(output_dir, 0666);
 
     if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644)) < 0)
         DIE("open pcap");
@@ -339,10 +401,19 @@ void signal_handler()
     rotate_log = 1;
 }
 
+void dump_buffer(uint8_t *buffer, uint16_t length) {
+	int i;
+	printf("\tDUMP: ");
+	for (i=0; i < length; i++) {
+		printf(" %02X", (uint8_t)buffer[i]);
+	}
+	printf("\n");
+}
+
 int main(int argc, char **argv)
 {
     int port, n_bytes = -1, res, size = 0, log_fd = -1, n_packets = 0;
-    char buffer[MODBUS_MAX_PACKET_SIZE];
+    uint8_t buffer[MODBUS_MAX_PACKET_SIZE];
     struct timeval timeout;
     fd_set set;
 
@@ -393,7 +464,9 @@ int main(int argc, char **argv)
             if (n_packets % max_packet_per_capture == 0)
                 rotate_log = 1;
 
-            crc_check(buffer, size);
+            if (crc_check(buffer, size)) {
+                dump_buffer(buffer, size);
+            }
             write_packet_header(log_fd, size);
 
             if (write(log_fd, buffer, size) < 0)

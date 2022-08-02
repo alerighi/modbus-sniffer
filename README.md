@@ -23,6 +23,8 @@ Usage: ./sniffer [-h] [-o out_dir] [-p port] [-s speed]
  -b, --bits         number of bits (default 8)
  -P, --parity       parity to use (default 'N')
  -S, --stop-bits    stop bits to use (default 1)
+ -t, --interval     time interval between packets (default 1500)
+ -m, --max-packets  maximum number of packets in capture file (default 10000)
 ```
 
 By default files are saved in the output directory with filename in
@@ -37,3 +39,8 @@ To capture the packets, you need a standard RS485 to TTL serial converter.
 I tested the capture on a Raspberry Pi model 3B+. If you also use
 a Raspberry, make sure to enable the hardware UART for better performance
 by disabling the Bluetooth interface.
+
+## USB Serial port latency
+Linux kernel tries to optimize load of USB transfers, that's a latency_timer which is default 16ms.
+It's pretty high for modbus communication, so the sniffer set the serial port automatically to ASYNC_LOW_LATENCY (1ms).
+This setting requires sudo.
