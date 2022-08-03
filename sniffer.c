@@ -18,10 +18,12 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
-#include <sys/ioctl.h>
-#include <linux/serial.h>
 #include <sys/stat.h>
 
+#ifdef __linux__
+#include <sys/ioctl.h>
+#include <linux/serial.h>
+#endif /*__linux__*/
 
 #define DIE(err) do { perror(err); exit(EXIT_FAILURE); } while (0)
 
@@ -129,8 +131,20 @@ int crc_check(uint8_t *buffer, int length)
 speed_t get_baud(uint32_t baud)
 {
     switch (baud) {
+    case 300:
+    	return B300;
+    case 600:
+    	return B600;
+    case 1200:
+    	return B1200;
+    case 1800:
+    	return B1800;
+    case 2400:
+    	return B2400;
+    case 4800:
+    	return B4800;
     case 9600:
-        return B9600;
+    	return B9600;
     case 19200:
         return B19200;
     case 38400:
@@ -161,10 +175,6 @@ speed_t get_baud(uint32_t baud)
         return B2500000;
     case 3000000:
         return B3000000;
-    case 3500000:
-        return B3500000;
-    case 4000000:
-        return B4000000;
     default: 
         DIE("ERROR: Baudrate not supported\n");
 	return -1;
@@ -237,14 +247,16 @@ void parse_args(int argc, char **argv)
 void configure_serial_port(int fd)
 {
     struct termios tty;
-    struct serial_struct serial;
     
+#ifdef __linux__
+    struct serial_struct serial;
     
     if (ioctl(fd, TIOCGSERIAL, &serial) < 0)
         DIE("ioctl get");
     serial.flags |= ASYNC_LOW_LATENCY;
     if (ioctl(fd, TIOCSSERIAL, &serial) < 0)
         DIE("ioctl set");
+#endif /*__linux__*/
 
     if (tcgetattr(fd, &tty) < 0)
         DIE("tcgetattr");
