@@ -32,15 +32,15 @@
  */
 #define MODBUS_MAX_PACKET_SIZE 300
 
-/* CLI params */
-char *serial_port = "/dev/ttyAMA0";
-char *output_dir = "./";
-char parity = 'N';
-int bits = 8;
-uint32_t speed = 9600;
-int stop_bits = 1;
-uint32_t bytes_time_interval_us = 1500;
-int max_packet_per_capture = 10000;
+struct cli_args {
+    char *serial_port;
+    char *output_file;
+    char parity;
+    int bits;
+    uint32_t speed;
+    int stop_bits;
+    uint32_t bytes_time_interval_us;
+};
 
 struct option long_options[] = {
     { "serial-port", required_argument, NULL, 'p' },
@@ -65,14 +65,14 @@ struct pcap_global_header {
     uint32_t sigfigs;       /* accuracy of timestamps */
     uint32_t snaplen;       /* max length of captured packets, in octets */
     uint32_t network;       /* data link type */
-};
+} __attribute__((packed));
 
 struct pcap_packet_header {
     uint32_t ts_sec;   /* timestamp seconds */
     uint32_t ts_usec;  /* timestamp microseconds */
     uint32_t incl_len; /* number of octets of packet saved in file */
     uint32_t orig_len; /* actual length of packet */
-};
+} __attribute__((packed));
 
 uint16_t crc16_table[] = {
     0x0000, 0xC0C1, 0xC181, 0x0140, 0xC301, 0x03C0, 0x0280, 0xC241,
@@ -123,7 +123,7 @@ int crc_check(uint8_t *buffer, int length)
 
    valid_crc = ((crc >> 8) == (buffer[1] & 0xFF))  && ((crc & 0xFF) == (buffer[0] & 0xFF)) ;
 
-   printf("CRC: %04X = %02X%02X [%s]\n", crc, buffer[1] & 0xFF, buffer[0] & 0xFF, valid_crc ? "OK" : "FAIL");
+   fprintf(stderr, "CRC: %04X = %02X%02X [%s]\n", crc, buffer[1] & 0xFF, buffer[0] & 0xFF, valid_crc ? "OK" : "FAIL");
    return valid_crc;
 }
 
@@ -185,9 +185,9 @@ void usage(FILE *fp, char *progname, int exit_code)
 {
     int n;
 
-    fprintf(fp, "Usage: %s %n[-h] [-o out_dir] [-p port] [-s speed]\n", progname, &n);
+    fprintf(fp, "Usage: %s %n[-h] [-o output] [-p port] [-s speed]\n", progname, &n);
     fprintf(fp, "%*c[-P parity] [-S stop_bits] [-b bits]\n\n", n, ' ');
-    fprintf(fp, " -o, --output-dir   directory where to save the output\n");
+    fprintf(fp, " -o, --output       output file to use (defaults to stdout, file will be truncated if already existing)\n");
     fprintf(fp, " -p, --serial-port  serial port to use\n");
     fprintf(fp, " -s, --speed        serial port speed (default 9600)\n");
     fprintf(fp, " -b, --bits         number of bits (default 8)\n");
@@ -199,52 +199,58 @@ void usage(FILE *fp, char *progname, int exit_code)
     exit(exit_code);
 }
 
-void parse_args(int argc, char **argv)
+void parse_args(int argc, char **argv, struct cli_args *args)
 {
     int opt;
+
+    /* default values */
+    args->serial_port = "/dev/ttyAMA0";
+    args->output_file = "-";
+    args->parity = 'N';
+    args->bits = 8;
+    args->speed = 9600;
+    args->stop_bits = 1;
+    args->bytes_time_interval_us = 1500;
 
     while ((opt = getopt_long(argc, argv, "ho:p:s:P:S:b:", long_options, NULL)) >= 0) {
         switch (opt) {
         case 'o':
-            output_dir = optarg;
+            args->output_file = optarg;
             break;
         case 'p':
-            serial_port = optarg;
+            args->serial_port = optarg;
             break;
         case 's':
-            speed = strtoul(optarg, NULL, 10);
+            args->speed = strtoul(optarg, NULL, 10);
             break;
         case 'b':
-            bits = atoi(optarg);
+            args->bits = atoi(optarg);
             break;
         case 'P':
-            parity = optarg[0];
+            args->parity = optarg[0];
             break;
         case 'S':
-            stop_bits = atoi(optarg);
+            args->stop_bits = atoi(optarg);
             break;
         case 't':
-            bytes_time_interval_us = strtoul(optarg, NULL, 10);
-            break;
-        case 'm':
-            max_packet_per_capture = atoi(optarg);
+            args->bytes_time_interval_us = strtoul(optarg, NULL, 10);
             break;
         case 'h':
             usage(stdout, argv[0], EXIT_SUCCESS);
+            break;
         default:
             usage(stderr, argv[0], EXIT_FAILURE);
         }
     }
 
-    printf("output directory: %s\n", output_dir);
-    printf("serial port: %s\n", serial_port);
-    printf("port type: %d%c%d %d baud\n", bits, parity, stop_bits, speed);
-    printf("time interval: %d\n", bytes_time_interval_us);
-    printf("maximum packets in capture: %d\n", max_packet_per_capture);
+    fprintf(stderr, "output file: %s\n", args->output_file);
+    fprintf(stderr, "serial port: %s\n", args->serial_port);
+    fprintf(stderr, "port type: %d%c%d %d baud\n", args->bits, args->parity, args->stop_bits, args->speed);
+    fprintf(stderr, "time interval: %d\n", args->bytes_time_interval_us);
 }
 
 /* https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp */
-void configure_serial_port(int fd)
+void configure_serial_port(int fd, const struct cli_args *args)
 {
     struct termios tty;
     
@@ -262,17 +268,17 @@ void configure_serial_port(int fd)
         DIE("tcgetattr");
 
     /* set parity */
-    if (parity == 'N')
+    if (args->parity == 'N')
         tty.c_cflag &= ~PARENB;
 
-    if (parity == 'E')
+    if (args->parity == 'E')
         tty.c_cflag |= PARENB;
 
-    if (parity == 'O')
+    if (args->parity == 'O')
         tty.c_cflag |= PARODD | PARENB;
 
     /* set stop bits */
-    if (stop_bits == 2)
+    if (args->stop_bits == 2)
         tty.c_cflag |= CSTOPB;
     else
         tty.c_cflag &= ~CSTOPB;
@@ -280,7 +286,7 @@ void configure_serial_port(int fd)
     /* set bits */
     tty.c_cflag &= ~CSIZE;
 
-    switch (bits) {
+    switch (args->bits) {
     case 5: tty.c_cflag |= CS5; break;
     case 6: tty.c_cflag |= CS6; break;
     case 7: tty.c_cflag |= CS7; break;
@@ -335,14 +341,14 @@ void configure_serial_port(int fd)
     tty.c_cc[VMIN] = 0;
 
     /* set port speed */
-    cfsetispeed(&tty, get_baud(speed));
-    cfsetospeed(&tty, get_baud(speed));
+    cfsetispeed(&tty, get_baud(args->speed));
+    cfsetospeed(&tty, get_baud(args->speed));
 
     if (tcsetattr(fd, TCSANOW, &tty) < 0)
         DIE("tcsetattr");
 }
 
-void write_global_header(int fd)
+void write_global_header(FILE *fp)
 {
     struct pcap_global_header header = {
         .magic_number = 0xa1b2c3d4,
@@ -354,11 +360,11 @@ void write_global_header(int fd)
         .network = 147, /* custom USER */
     };
 
-    if (write(fd, &header, sizeof header) < 0)
+    if (fwrite(&header, sizeof header, 1, fp) != 1)
         DIE("write pcap");
 }
 
-void write_packet_header(int fd, int length)
+void write_packet_header(FILE *fp, int length)
 {
     struct timespec t;
     struct pcap_packet_header header;
@@ -370,42 +376,31 @@ void write_packet_header(int fd, int length)
     header.incl_len = length;
     header.orig_len = length;
 
-    if (write(fd, &header, sizeof header) < 0)
+    if (fwrite(&header, sizeof header, 1, fp) != 1)
         DIE("write pcap");
+
+    fflush(fp);
 }
 
-int open_logfile()
+FILE *open_logfile(const char *path)
 {
-    int fd;
-    time_t t;
-    struct tm *l;
-    char filename[PATH_MAX];
-    char path[PATH_MAX];
-    char latest_path[PATH_MAX];
+    FILE *fp;
+    if (!path || strcmp(path, "-") == 0) {
+        fp = stdout;
+        if (isatty(1)) {
+            fprintf(stderr, "capture file is binary, redirect it to a file or use the --output option!\n");
+            exit(EXIT_FAILURE);
+        }
+    } else {
+        fp = fopen(path, "wb+");
+        if (!fp) {
+            DIE("cannot open output file");
+        }
+    }
 
-    t = time(NULL);
-    l = localtime(&t);
+    write_global_header(fp);
 
-    strftime(filename, PATH_MAX, "modbus_%Y-%m-%d_%H_%M_%S.pcap", l);
-    snprintf(path, PATH_MAX, "%s/%s", output_dir, filename);
-    snprintf(latest_path, PATH_MAX, "%s/latest.pcap", output_dir);
-
-    printf("opening logfile: %s\n", path);
-    
-    mkdir(output_dir, 0666);
-
-    if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644)) < 0)
-        DIE("open pcap");
-
-    if (access(latest_path, F_OK) == 0 && unlink(latest_path) < 0)
-        perror("unlink latest.pcap error");
-
-    if (symlink(path, latest_path) < 0)
-        perror("symlink latest.pcap error");
-
-    write_global_header(fd);
-
-    return fd;
+    return fp;
 }
 
 void signal_handler()
@@ -413,41 +408,44 @@ void signal_handler()
     rotate_log = 1;
 }
 
-void dump_buffer(uint8_t *buffer, uint16_t length) {
+void dump_buffer(uint8_t *buffer, uint16_t length) 
+{
 	int i;
-	printf("\tDUMP: ");
+	fprintf(stderr, "\tDUMP: ");
 	for (i=0; i < length; i++) {
-		printf(" %02X", (uint8_t)buffer[i]);
+		fprintf(stderr, " %02X", (uint8_t)buffer[i]);
 	}
-	printf("\n");
+	fprintf(stderr, "\n");
 }
 
 int main(int argc, char **argv)
 {
-    int port, n_bytes = -1, res, size = 0, log_fd = -1, n_packets = 0;
+    struct cli_args args = {0};
+    int port, n_bytes = -1, res, n_packets = 0;
+    size_t size = 0;
     uint8_t buffer[MODBUS_MAX_PACKET_SIZE];
     struct timeval timeout;
     fd_set set;
+    FILE *log_fp = NULL;
 
     signal(SIGUSR1, signal_handler);
 
-    parse_args(argc, argv);
+    parse_args(argc, argv, &args);
 
-    puts("starting modbus sniffer");
+    fprintf(stderr, "starting modbus sniffer\n");
 
-    if ((port = open(serial_port, O_RDONLY)) < 0)
+    if ((port = open(args.serial_port, O_RDONLY)) < 0)
         DIE("open port");
 
-    configure_serial_port(port);
+    configure_serial_port(port, &args);
 
     while (n_bytes != 0) {
-        if (rotate_log) {
+        if (rotate_log || !log_fp) {
+            if (log_fp) {
+                fclose(log_fp);
+            }
+            log_fp = open_logfile(args.output_file);
             rotate_log = 0;
-
-            if (log_fd > 0 && close(log_fd) < -1)
-                DIE("close pcap");
-
-            log_fd = open_logfile();
         }
 
         /* RTFM! these are overwritten after each select call and thus must be inizialized again */
@@ -456,7 +454,7 @@ int main(int argc, char **argv)
 
         /* also these maybe overwritten in Linux */
         timeout.tv_sec = 0;
-        timeout.tv_usec = bytes_time_interval_us;
+        timeout.tv_usec = args.bytes_time_interval_us;
 
         if ((res = select(port + 1, &set, NULL, NULL, &timeout)) < 0 && errno != EINTR)
             DIE("select");
@@ -471,19 +469,17 @@ int main(int argc, char **argv)
 
         /* captured an entire packet */
         if (size > 0 && (res == 0 || size >= MODBUS_MAX_PACKET_SIZE || n_bytes == 0)) {
-            printf("captured packet %d: length = %d, ", ++n_packets, size);
-
-            if (n_packets % max_packet_per_capture == 0)
-                rotate_log = 1;
+            fprintf(stderr, "captured packet %d: length = %zu, ", ++n_packets, size);
 
             if (crc_check(buffer, size)) {
                 dump_buffer(buffer, size);
             }
-            write_packet_header(log_fd, size);
+            write_packet_header(log_fp, size);
 
-            if (write(log_fd, buffer, size) < 0)
+            if (fwrite(buffer, 1, size, log_fp) != size)
                 DIE("write pcap");
 
+            fflush(log_fp);
             size = 0;
         }
     }

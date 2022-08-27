@@ -17,7 +17,7 @@ You can specify the options with the command line:
 Usage: ./sniffer [-h] [-o out_dir] [-p port] [-s speed]
                  [-P parity] [-S stop_bits] [-b bits]
 
- -o, --output-dir   directory where to save the output
+ -o, --output       output file where to save the output
  -p, --serial-port  serial port to use
  -s, --speed        serial port speed (default 9600)
  -b, --bits         number of bits (default 8)
@@ -27,13 +27,27 @@ Usage: ./sniffer [-h] [-o out_dir] [-p port] [-s speed]
  -m, --max-packets  maximum number of packets in capture file (default 10000)
 ```
 
-By default files are saved in the output directory with filename in
-the format `modbus_YYYY-mm-dd_HH:MM:SS.pcap`.
+By default the output file is `stdout`. This allows to pipe directly the output into other
+programs, such as Wireshark. 
 
-By sending to the program a `SIGUSR1` the capture is rotated, i.e. the pcap
-file is closed and another one is initiated. By default a .pcap file contains
-maximum 10000 entries: after that the log is rotate. You can tweak this parameter
-by editing the `MAX_CAPTURE_FILE_PACKETS` in the source code.
+Unlinke previous versions of the program, an output directory and files into them
+are not created. If you need to do a long capture, splitting it into multiple caputure
+files, you can use an external program, such as `logrotate` to create a copy of the output
+file, and the send to this program `SIGUSR1` to reopen the capture file again. 
+
+As an example, you can use the following logrotate config:
+```
+/path/to/capture.log {
+    size 10K
+    copy
+    dateext
+    dateformat "-%Y-%m-%d-%s"
+    missingok
+    postrotate
+        killall -USR1 sniffer
+    endscript
+}
+```
 
 To capture the packets, you need a standard RS485 to TTL serial converter.
 I tested the capture on a Raspberry Pi model 3B+. If you also use
