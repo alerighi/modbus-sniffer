@@ -24,7 +24,7 @@ Usage: ./sniffer [-h] [-o out_dir] [-p port] [-s speed]
  -P, --parity       parity to use (default 'N')
  -S, --stop-bits    stop bits to use (default 1)
  -t, --interval     time interval between packets (default 1500)
- -m, --max-packets  maximum number of packets in capture file (default 10000)
+ -l, --low-latency  try to enable serial port low-latency mode (Linux-only)
 ```
 
 By default the output file is `stdout`. This allows to pipe directly the output into other
@@ -55,6 +55,9 @@ a Raspberry, make sure to enable the hardware UART for better performance
 by disabling the Bluetooth interface.
 
 ## USB Serial port latency
+
 Linux kernel tries to optimize load of USB transfers, that's a latency_timer which is default 16ms.
-It's pretty high for modbus communication, so the sniffer set the serial port automatically to ASYNC_LOW_LATENCY (1ms).
-This setting requires sudo.
+It's pretty high for modbus communication, so to get better result use the `-l` (`--low-latency`) flag to try to set 
+the serial port automatically to ASYNC_LOW_LATENCY (1ms). This requires root privileges, and it's supported only on Linux.
+Moreover, not all serial adapters may be supported. In case it's not supported the program will print an error and continue in normal mode.
+ 

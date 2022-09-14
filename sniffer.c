@@ -187,7 +187,7 @@ void usage(FILE *fp, char *progname, int exit_code)
 {
     int n;
 
-    fprintf(fp, "Usage: %s %n[-h] [-o output] [-p port] [-s speed]\n", progname, &n);
+    fprintf(fp, "Usage: %s %n[-hl] [-o output] [-p port] [-s speed]\n", progname, &n);
     fprintf(fp, "%*c[-P parity] [-S stop_bits] [-b bits]\n\n", n, ' ');
     fprintf(fp, " -o, --output       output file to use (defaults to stdout, file will be truncated if already existing)\n");
     fprintf(fp, " -p, --serial-port  serial port to use\n");
