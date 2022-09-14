@@ -1,6 +1,6 @@
 /*
  * A sniffer for the Modbus protocol
- * (c) 2020 Alessandro Righi - released under the MIT license
+ * (c) 2020-2022 Alessandro Righi - released under the MIT license
  * (c) 2021 vheat - released under the MIT license
  */
 
@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
@@ -40,17 +41,18 @@ struct cli_args {
     uint32_t speed;
     int stop_bits;
     uint32_t bytes_time_interval_us;
+    bool low_latency;
 };
 
 struct option long_options[] = {
     { "serial-port", required_argument, NULL, 'p' },
-    { "output-dir",  required_argument, NULL, 'o' },
+    { "output",      required_argument, NULL, 'o' },
     { "speed",       required_argument, NULL, 's' },
     { "parity",      required_argument, NULL, 'P' },
     { "bits",        required_argument, NULL, 'b' },
     { "stop-bits",   required_argument, NULL, 'S' },
     { "interval",    required_argument, NULL, 't' },
-    { "max-packets", required_argument, NULL, 'm' },
+    { "low-latency", no_argument,       NULL, 'l' },
     { "help",        no_argument,       NULL, 'h' },
     { NULL,          0,                 NULL,  0  },
 };
@@ -194,7 +196,10 @@ void usage(FILE *fp, char *progname, int exit_code)
     fprintf(fp, " -P, --parity       parity to use (default 'N')\n");
     fprintf(fp, " -S, --stop-bits    stop bits to use (default 1)\n");
     fprintf(fp, " -t, --interval     time interval between packets (default 1500)\n");
-    fprintf(fp, " -m, --max-packets  maximum number of packets in capture file (default 10000)\n");
+
+#ifdef __linux__
+    fprintf(fp, " -l, --low-latency  try to enable serial port low-latency mode (Linux-only)\n");
+#endif
 
     exit(exit_code);
 }
@@ -211,8 +216,9 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     args->speed = 9600;
     args->stop_bits = 1;
     args->bytes_time_interval_us = 1500;
+    args->low_latency = false;
 
-    while ((opt = getopt_long(argc, argv, "ho:p:s:P:S:b:", long_options, NULL)) >= 0) {
+    while ((opt = getopt_long(argc, argv, "ho:p:s:P:S:b:l", long_options, NULL)) >= 0) {
         switch (opt) {
         case 'o':
             args->output_file = optarg;
@@ -238,6 +244,9 @@ void parse_args(int argc, char **argv, struct cli_args *args)
         case 'h':
             usage(stdout, argv[0], EXIT_SUCCESS);
             break;
+        case 'l':
+            args->low_latency = true;
+            break;
         default:
             usage(stderr, argv[0], EXIT_FAILURE);
         }
@@ -255,13 +264,17 @@ void configure_serial_port(int fd, const struct cli_args *args)
     struct termios tty;
     
 #ifdef __linux__
-    struct serial_struct serial;
-    
-    if (ioctl(fd, TIOCGSERIAL, &serial) < 0)
-        DIE("ioctl get");
-    serial.flags |= ASYNC_LOW_LATENCY;
-    if (ioctl(fd, TIOCSSERIAL, &serial) < 0)
-        DIE("ioctl set");
+    if (args->low_latency) {
+        struct serial_struct serial;
+        
+        if (ioctl(fd, TIOCGSERIAL, &serial) < 0) {
+            perror("error getting serial struct. Low latency mode not supported");
+        } else {
+            serial.flags |= ASYNC_LOW_LATENCY;
+            if (ioctl(fd, TIOCSSERIAL, &serial) < 0)
+                perror("error setting serial struct. Low latency mode not supported");
+        }
+    }
 #endif /*__linux__*/
 
     if (tcgetattr(fd, &tty) < 0)
