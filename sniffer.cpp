@@ -271,7 +271,7 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     fprintf(stderr, "serial port: %s\n", args->serial_port);
     fprintf(stderr, "port type: %d%c%d %d baud\n", args->bits, args->parity, args->stop_bits, args->speed);
     fprintf(stderr, "time interval: %d\n", args->bytes_time_interval_us);
-    fprintf(stderr, "maximum packets in capture: %d", args->max_packet_per_capture);
+    fprintf(stderr, "maximum packets in capture: %d\n", args->max_packet_per_capture);
 }
 
 /* https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp */
