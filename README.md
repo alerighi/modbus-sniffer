@@ -17,13 +17,17 @@ You can specify the options with the command line:
 Usage: ./sniffer [-h] [-o out_dir] [-p port] [-s speed]
                  [-P parity] [-S stop_bits] [-b bits]
 
+ -h, --help         print help like this
  -o, --output       output file where to save the output
  -p, --serial-port  serial port to use
  -s, --speed        serial port speed (default 9600)
  -b, --bits         number of bits (default 8)
  -P, --parity       parity to use (default 'N')
  -S, --stop-bits    stop bits to use (default 1)
- -t, --interval     time interval between packets (default 1500)
+ -t, --interval     time interval between packets (default 1500 us)
+                    use 6000@4800Bd, 3000@9600Bd, 1500@19200Bd, 750@38400Bd, ...
+ -i, --ignore-crc   dump also broken packages
+  (only on Linux:)
  -l, --low-latency  try to enable serial port low-latency mode (Linux-only)
 ```
 
