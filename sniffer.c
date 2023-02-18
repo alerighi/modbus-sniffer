@@ -197,8 +197,8 @@ void usage(FILE *fp, char *progname, int exit_code)
     fprintf(fp, " -b, --bits         number of bits (default 8)\n");
     fprintf(fp, " -P, --parity       parity to use (default 'N')\n");
     fprintf(fp, " -S, --stop-bits    stop bits to use (default 1)\n");
-    fprintf(fp, " -t, --interval     time interval between packets (default 1500)\n");
-    fprintf(fp, " -i, --ignore-crc   dump also brocken packages\n");
+    fprintf(fp, " -t, --interval     time interval between packets (default 1500 us)\n");  // <7291.66_us@4800 <3645.833_us@9600, <1822.9166_us@19200, <911.45833_us@38400, ...
+    fprintf(fp, " -i, --ignore-crc   dump also broken packages\n");
 
 #ifdef __linux__
     fprintf(fp, " -l, --low-latency  try to enable serial port low-latency mode (Linux-only)\n");
