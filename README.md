@@ -27,6 +27,7 @@ Usage: ./sniffer [-h] [-o out_dir] [-p port] [-s speed]
  -t, --interval     time interval between packets (default 1500 us)
                     use 6000@4800Bd, 3000@9600Bd, 1500@19200Bd, 750@38400Bd, ...
  -i, --ignore-crc   dump also broken packages
+ -m, --max-packets  maximum number of packets in capture file (default 10000)
   (only on Linux:)
  -l, --low-latency  try to enable serial port low-latency mode (Linux-only)
 ```

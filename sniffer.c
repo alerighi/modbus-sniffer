@@ -43,6 +43,7 @@ struct cli_args {
     uint32_t bytes_time_interval_us;
     bool low_latency;
     bool ignore_crc;
+    int max_packet_per_capture;
 };
 
 struct option long_options[] = {
@@ -53,6 +54,7 @@ struct option long_options[] = {
     { "bits",        required_argument, NULL, 'b' },
     { "stop-bits",   required_argument, NULL, 'S' },
     { "interval",    required_argument, NULL, 't' },
+    { "max-packets", required_argument, NULL, 'm' },
     { "low-latency", no_argument,       NULL, 'l' },
     { "help",        no_argument,       NULL, 'h' },
     { "ignore-crc",  no_argument,       NULL, 'i' },
@@ -191,6 +193,7 @@ void usage(FILE *fp, char *progname, int exit_code)
 
     fprintf(fp, "Usage: %s %n[-hl] [-o output] [-p port] [-s speed]\n", progname, &n);
     fprintf(fp, "%*c[-P parity] [-S stop_bits] [-b bits]\n\n", n, ' ');
+    fprintf(fp, " -h, --help         print help like this\n");
     fprintf(fp, " -o, --output       output file to use (defaults to stdout, file will be truncated if already existing)\n");
     fprintf(fp, " -p, --serial-port  serial port to use\n");
     fprintf(fp, " -s, --speed        serial port speed (default 9600)\n");
@@ -199,6 +202,7 @@ void usage(FILE *fp, char *progname, int exit_code)
     fprintf(fp, " -S, --stop-bits    stop bits to use (default 1)\n");
     fprintf(fp, " -t, --interval     time interval between packets (default 1500 us)\n");  // <7291.66_us@4800 <3645.833_us@9600, <1822.9166_us@19200, <911.45833_us@38400, ...
     fprintf(fp, " -i, --ignore-crc   dump also broken packages\n");
+    fprintf(fp, " -m, --max-packets  maximum number of packets in capture file (default 10000)\n");
 
 #ifdef __linux__
     fprintf(fp, " -l, --low-latency  try to enable serial port low-latency mode (Linux-only)\n");
@@ -221,8 +225,9 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     args->bytes_time_interval_us = 1500;
     args->low_latency = false;
     args->ignore_crc = false;
+	args->max_packet_per_capture = 10000;
 
-    while ((opt = getopt_long(argc, argv, "o:p:s:b:P:S:t:hli", long_options, NULL)) >= 0) {
+    while ((opt = getopt_long(argc, argv, "o:p:s:b:P:S:t:hlim:", long_options, NULL)) >= 0) {
         switch (opt) {
         case 'o':
             args->output_file = optarg;
@@ -254,6 +259,9 @@ void parse_args(int argc, char **argv, struct cli_args *args)
         case 'i':
             args->ignore_crc = true;
             break;
+        case 'm':
+            max_packet_per_capture = atoi(optarg);
+            break;
         default:
             usage(stderr, argv[0], EXIT_FAILURE);
         }
@@ -263,6 +271,7 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     fprintf(stderr, "serial port: %s\n", args->serial_port);
     fprintf(stderr, "port type: %d%c%d %d baud\n", args->bits, args->parity, args->stop_bits, args->speed);
     fprintf(stderr, "time interval: %d\n", args->bytes_time_interval_us);
+    fprintf(stderr, "maximum packets in capture: %d", max_packet_per_capture);
 }
 
 /* https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp */
@@ -490,6 +499,9 @@ int main(int argc, char **argv)
         /* captured an entire packet */
         if (size > 0 && (res == 0 || size >= MODBUS_MAX_PACKET_SIZE || n_bytes == 0)) {
             fprintf(stderr, "captured packet %d: length = %zu, ", ++n_packets, size);
+
+            if (n_packets % max_packet_per_capture == 0)
+                rotate_log = 1;
 
             if (crc_check(buffer, size) || args.ignore_crc) {
                 dump_buffer(buffer, size);
