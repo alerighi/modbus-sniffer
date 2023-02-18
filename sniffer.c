@@ -260,7 +260,7 @@ void parse_args(int argc, char **argv, struct cli_args *args)
             args->ignore_crc = true;
             break;
         case 'm':
-            max_packet_per_capture = atoi(optarg);
+            args->max_packet_per_capture = atoi(optarg);
             break;
         default:
             usage(stderr, argv[0], EXIT_FAILURE);
@@ -271,7 +271,7 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     fprintf(stderr, "serial port: %s\n", args->serial_port);
     fprintf(stderr, "port type: %d%c%d %d baud\n", args->bits, args->parity, args->stop_bits, args->speed);
     fprintf(stderr, "time interval: %d\n", args->bytes_time_interval_us);
-    fprintf(stderr, "maximum packets in capture: %d", max_packet_per_capture);
+    fprintf(stderr, "maximum packets in capture: %d", args->max_packet_per_capture);
 }
 
 /* https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp */
@@ -500,7 +500,7 @@ int main(int argc, char **argv)
         if (size > 0 && (res == 0 || size >= MODBUS_MAX_PACKET_SIZE || n_bytes == 0)) {
             fprintf(stderr, "captured packet %d: length = %zu, ", ++n_packets, size);
 
-            if (n_packets % max_packet_per_capture == 0)
+            if (n_packets % args.max_packet_per_capture == 0)
                 rotate_log = 1;
 
             if (crc_check(buffer, size) || args.ignore_crc) {
