@@ -491,7 +491,7 @@ int main(int argc, char **argv)
         if (size > 0 && (res == 0 || size >= MODBUS_MAX_PACKET_SIZE || n_bytes == 0)) {
             fprintf(stderr, "captured packet %d: length = %zu, ", ++n_packets, size);
 
-            if (crc_check(buffer, size) || args->ignore_crc) {
+            if (crc_check(buffer, size) || args.ignore_crc) {
                 dump_buffer(buffer, size);
             }
             write_packet_header(log_fp, size);
