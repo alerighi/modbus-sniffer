@@ -42,6 +42,7 @@ struct cli_args {
     int stop_bits;
     uint32_t bytes_time_interval_us;
     bool low_latency;
+    bool ignore_crc;
 };
 
 struct option long_options[] = {
@@ -54,6 +55,7 @@ struct option long_options[] = {
     { "interval",    required_argument, NULL, 't' },
     { "low-latency", no_argument,       NULL, 'l' },
     { "help",        no_argument,       NULL, 'h' },
+    { "ignore-crc",  no_argument,       NULL, 'i' },
     { NULL,          0,                 NULL,  0  },
 };
 
@@ -129,7 +131,7 @@ int crc_check(uint8_t *buffer, int length)
    return valid_crc;
 }
 
-/* https://stackoverflow.com/questions/47311500/how-to-efficiently-convert-baudrate-from-int-to-speed-t */ 
+/* https://stackoverflow.com/questions/47311500/how-to-efficiently-convert-baudrate-from-int-to-speed-t */
 speed_t get_baud(uint32_t baud)
 {
     switch (baud) {
@@ -177,7 +179,7 @@ speed_t get_baud(uint32_t baud)
         return B2500000;
     case 3000000:
         return B3000000;
-    default: 
+    default:
         DIE("ERROR: Baudrate not supported\n");
 	return -1;
     }
@@ -196,6 +198,7 @@ void usage(FILE *fp, char *progname, int exit_code)
     fprintf(fp, " -P, --parity       parity to use (default 'N')\n");
     fprintf(fp, " -S, --stop-bits    stop bits to use (default 1)\n");
     fprintf(fp, " -t, --interval     time interval between packets (default 1500)\n");
+    fprintf(fp, " -i, --ignore-crc   dump also brocken packages\n");
 
 #ifdef __linux__
     fprintf(fp, " -l, --low-latency  try to enable serial port low-latency mode (Linux-only)\n");
@@ -217,8 +220,9 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     args->stop_bits = 1;
     args->bytes_time_interval_us = 1500;
     args->low_latency = false;
+    args->ignore_crc = false;
 
-    while ((opt = getopt_long(argc, argv, "o:p:s:b:P:S:t:hl", long_options, NULL)) >= 0) {
+    while ((opt = getopt_long(argc, argv, "o:p:s:b:P:S:t:hli", long_options, NULL)) >= 0) {
         switch (opt) {
         case 'o':
             args->output_file = optarg;
@@ -247,6 +251,9 @@ void parse_args(int argc, char **argv, struct cli_args *args)
         case 'l':
             args->low_latency = true;
             break;
+        case 'i':
+            args->ignore_crc = true;
+            break;
         default:
             usage(stderr, argv[0], EXIT_FAILURE);
         }
@@ -262,11 +269,11 @@ void parse_args(int argc, char **argv, struct cli_args *args)
 void configure_serial_port(int fd, const struct cli_args *args)
 {
     struct termios tty;
-    
+
 #ifdef __linux__
     if (args->low_latency) {
         struct serial_struct serial;
-        
+
         if (ioctl(fd, TIOCGSERIAL, &serial) < 0) {
             perror("error getting serial struct. Low latency mode not supported");
         } else {
@@ -421,7 +428,7 @@ void signal_handler()
     rotate_log = 1;
 }
 
-void dump_buffer(uint8_t *buffer, uint16_t length) 
+void dump_buffer(uint8_t *buffer, uint16_t length)
 {
 	int i;
 	fprintf(stderr, "\tDUMP: ");
@@ -484,7 +491,7 @@ int main(int argc, char **argv)
         if (size > 0 && (res == 0 || size >= MODBUS_MAX_PACKET_SIZE || n_bytes == 0)) {
             fprintf(stderr, "captured packet %d: length = %zu, ", ++n_packets, size);
 
-            if (crc_check(buffer, size)) {
+            if (crc_check(buffer, size) || args.ignore_crc) {
                 dump_buffer(buffer, size);
             }
             write_packet_header(log_fp, size);
