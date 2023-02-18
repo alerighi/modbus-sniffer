@@ -218,7 +218,7 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     args->bytes_time_interval_us = 1500;
     args->low_latency = false;
 
-    while ((opt = getopt_long(argc, argv, "ho:p:s:P:S:b:l", long_options, NULL)) >= 0) {
+    while ((opt = getopt_long(argc, argv, "o:p:s:b:P:S:t:hl", long_options, NULL)) >= 0) {
         switch (opt) {
         case 'o':
             args->output_file = optarg;
