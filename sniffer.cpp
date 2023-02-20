@@ -34,14 +34,16 @@
 #define MODBUS_MAX_PACKET_SIZE 300
 
 struct cli_args {
-    char *serial_port;
-    char *output_file;
+    const char *serial_port;
+    const char *output_file;
     char parity;
     int bits;
     uint32_t speed;
     int stop_bits;
     uint32_t bytes_time_interval_us;
     bool low_latency;
+    bool ignore_crc;
+    int max_packet_per_capture;
 };
 
 struct option long_options[] = {
@@ -52,8 +54,10 @@ struct option long_options[] = {
     { "bits",        required_argument, NULL, 'b' },
     { "stop-bits",   required_argument, NULL, 'S' },
     { "interval",    required_argument, NULL, 't' },
+    { "max-packets", required_argument, NULL, 'm' },
     { "low-latency", no_argument,       NULL, 'l' },
     { "help",        no_argument,       NULL, 'h' },
+    { "ignore-crc",  no_argument,       NULL, 'i' },
     { NULL,          0,                 NULL,  0  },
 };
 
@@ -129,7 +133,7 @@ int crc_check(uint8_t *buffer, int length)
    return valid_crc;
 }
 
-/* https://stackoverflow.com/questions/47311500/how-to-efficiently-convert-baudrate-from-int-to-speed-t */ 
+/* https://stackoverflow.com/questions/47311500/how-to-efficiently-convert-baudrate-from-int-to-speed-t */
 speed_t get_baud(uint32_t baud)
 {
     switch (baud) {
@@ -177,7 +181,7 @@ speed_t get_baud(uint32_t baud)
         return B2500000;
     case 3000000:
         return B3000000;
-    default: 
+    default:
         DIE("ERROR: Baudrate not supported\n");
 	return -1;
     }
@@ -189,13 +193,16 @@ void usage(FILE *fp, char *progname, int exit_code)
 
     fprintf(fp, "Usage: %s %n[-hl] [-o output] [-p port] [-s speed]\n", progname, &n);
     fprintf(fp, "%*c[-P parity] [-S stop_bits] [-b bits]\n\n", n, ' ');
+    fprintf(fp, " -h, --help         print help like this\n");
     fprintf(fp, " -o, --output       output file to use (defaults to stdout, file will be truncated if already existing)\n");
     fprintf(fp, " -p, --serial-port  serial port to use\n");
     fprintf(fp, " -s, --speed        serial port speed (default 9600)\n");
     fprintf(fp, " -b, --bits         number of bits (default 8)\n");
     fprintf(fp, " -P, --parity       parity to use (default 'N')\n");
     fprintf(fp, " -S, --stop-bits    stop bits to use (default 1)\n");
-    fprintf(fp, " -t, --interval     time interval between packets (default 1500)\n");
+    fprintf(fp, " -t, --interval     time interval between packets (default 1500 us)\n");  // <7291.66_us@4800 <3645.833_us@9600, <1822.9166_us@19200, <911.45833_us@38400, ...
+    fprintf(fp, " -i, --ignore-crc   dump also broken packages\n");
+    fprintf(fp, " -m, --max-packets  maximum number of packets in capture file (default 10000)\n");
 
 #ifdef __linux__
     fprintf(fp, " -l, --low-latency  try to enable serial port low-latency mode (Linux-only)\n");
@@ -217,8 +224,10 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     args->stop_bits = 1;
     args->bytes_time_interval_us = 1500;
     args->low_latency = false;
+    args->ignore_crc = false;
+    args->max_packet_per_capture = 10000;
 
-    while ((opt = getopt_long(argc, argv, "ho:p:s:P:S:b:l", long_options, NULL)) >= 0) {
+    while ((opt = getopt_long(argc, argv, "o:p:s:b:P:S:t:hlim:", long_options, NULL)) >= 0) {
         switch (opt) {
         case 'o':
             args->output_file = optarg;
@@ -247,6 +256,12 @@ void parse_args(int argc, char **argv, struct cli_args *args)
         case 'l':
             args->low_latency = true;
             break;
+        case 'i':
+            args->ignore_crc = true;
+            break;
+        case 'm':
+            args->max_packet_per_capture = atoi(optarg);
+            break;
         default:
             usage(stderr, argv[0], EXIT_FAILURE);
         }
@@ -256,17 +271,18 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     fprintf(stderr, "serial port: %s\n", args->serial_port);
     fprintf(stderr, "port type: %d%c%d %d baud\n", args->bits, args->parity, args->stop_bits, args->speed);
     fprintf(stderr, "time interval: %d\n", args->bytes_time_interval_us);
+    fprintf(stderr, "maximum packets in capture: %d\n", args->max_packet_per_capture);
 }
 
 /* https://blog.mbedded.ninja/programming/operating-systems/linux/linux-serial-ports-using-c-cpp */
 void configure_serial_port(int fd, const struct cli_args *args)
 {
     struct termios tty;
-    
+
 #ifdef __linux__
     if (args->low_latency) {
         struct serial_struct serial;
-        
+
         if (ioctl(fd, TIOCGSERIAL, &serial) < 0) {
             perror("error getting serial struct. Low latency mode not supported");
         } else {
@@ -339,12 +355,15 @@ void configure_serial_port(int fd, const struct cli_args *args)
     /* prevent conversion of newline to carriage return/line feed */
     tty.c_oflag &= ~ONLCR;
 
-#ifndef __linux__
+#if defined(__linux__) || defined(__CYGWIN__)
     /* prevent conversion of tabs to spaces */
-    tty.c_oflag &= ~OXTABS;
+    tty.c_oflag &= ~XTABS; // on GNU/Linux systems it is available as XTABS.
+#else
+    /* prevent conversion of tabs to spaces */
+    tty.c_oflag &= ~OXTABS; // This bit exists only on BSD systems and GNU/Hurd systems; on GNU/Linux systems it is available as XTABS.
 
     /* prevent removal of C-d chars (0x004) in output */
-    tty.c_oflag &= ~ONOEOT;
+    tty.c_oflag &= ~ONOEOT; //  This bit exists only on BSD systems and GNU/Hurd systems.
 #endif
 
     /* how much to wait for a read */
@@ -364,13 +383,13 @@ void configure_serial_port(int fd, const struct cli_args *args)
 void write_global_header(FILE *fp)
 {
     struct pcap_global_header header = {
-        .magic_number = 0xa1b2c3d4,
-        .version_major = 2,
-        .version_minor = 4,
-        .thiszone = 0,
-        .sigfigs = 0,
-        .snaplen = 1024,
-        .network = 147, /* custom USER */
+        /*.magic_number =*/ 0xa1b2c3d4,
+        /*.version_major =*/ 2,
+        /*.version_minor =*/ 4,
+        /*.thiszone =*/ 0,
+        /*.sigfigs =*/ 0,
+        /*.snaplen =*/ 1024,
+        /*.network =*/ 147 /* custom USER */
     };
 
     if (fwrite(&header, sizeof header, 1, fp) != 1)
@@ -416,12 +435,12 @@ FILE *open_logfile(const char *path)
     return fp;
 }
 
-void signal_handler()
+void signal_handler(int) // handler for SIGUSR1: just create a new trace file
 {
     rotate_log = 1;
 }
 
-void dump_buffer(uint8_t *buffer, uint16_t length) 
+void dump_buffer(uint8_t *buffer, uint16_t length)
 {
 	int i;
 	fprintf(stderr, "\tDUMP: ");
@@ -433,7 +452,7 @@ void dump_buffer(uint8_t *buffer, uint16_t length)
 
 int main(int argc, char **argv)
 {
-    struct cli_args args = {0};
+    struct cli_args args = {};
     int port, n_bytes = -1, res, n_packets = 0;
     size_t size = 0;
     uint8_t buffer[MODBUS_MAX_PACKET_SIZE];
@@ -484,7 +503,10 @@ int main(int argc, char **argv)
         if (size > 0 && (res == 0 || size >= MODBUS_MAX_PACKET_SIZE || n_bytes == 0)) {
             fprintf(stderr, "captured packet %d: length = %zu, ", ++n_packets, size);
 
-            if (crc_check(buffer, size)) {
+            if (n_packets % args.max_packet_per_capture == 0)
+                rotate_log = 1;
+
+            if (crc_check(buffer, size) || args.ignore_crc) {
                 dump_buffer(buffer, size);
             }
             write_packet_header(log_fp, size);
