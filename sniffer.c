@@ -21,10 +21,11 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-#ifdef __linux__
+#if __has_include(<linux/serial.h>)
+#define HAS_LINUX_SERIAL_H
 #include <sys/ioctl.h>
 #include <linux/serial.h>
-#endif /*__linux__*/
+#endif /* __has_include(<linux/serial.h>) */
 
 #define DIE(err) do { perror(err); exit(EXIT_FAILURE); } while (0)
 
@@ -144,9 +145,9 @@ void usage(FILE *fp, char *progname, int exit_code)
     fprintf(fp, " -S, --stop-bits    stop bits to use (default 1)\n");
     fprintf(fp, " -t, --interval     time interval between packets (default 1500)\n");
 
-#ifdef __linux__
+#ifdef HAS_LINUX_SERIAL_H
     fprintf(fp, " -l, --low-latency  try to enable serial port low-latency mode (Linux-only)\n");
-#endif
+#endif /* HAS_LINUX_SERIAL_H */
 
     exit(exit_code);
 }
@@ -210,7 +211,7 @@ void configure_serial_port(int fd, const struct cli_args *args)
 {
     struct termios tty;
     
-#ifdef __linux__
+#ifdef HAS_LINUX_SERIAL_H
     if (args->low_latency) {
         struct serial_struct serial;
         
@@ -222,7 +223,7 @@ void configure_serial_port(int fd, const struct cli_args *args)
                 perror("error setting serial struct. Low latency mode not supported");
         }
     }
-#endif /*__linux__*/
+#endif /* HAS_LINUX_SERIAL_H */
 
     if (tcgetattr(fd, &tty) < 0)
         DIE("tcgetattr");
