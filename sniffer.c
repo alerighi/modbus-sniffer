@@ -126,61 +126,8 @@ int crc_check(uint8_t *buffer, int length)
    valid_crc = ((crc >> 8) == (buffer[1] & 0xFF))  && ((crc & 0xFF) == (buffer[0] & 0xFF)) ;
 
    fprintf(stderr, "CRC: %04X = %02X%02X [%s]\n", crc, buffer[1] & 0xFF, buffer[0] & 0xFF, valid_crc ? "OK" : "FAIL");
+  
    return valid_crc;
-}
-
-/* https://stackoverflow.com/questions/47311500/how-to-efficiently-convert-baudrate-from-int-to-speed-t */ 
-speed_t get_baud(uint32_t baud)
-{
-    switch (baud) {
-    case 300:
-    	return B300;
-    case 600:
-    	return B600;
-    case 1200:
-    	return B1200;
-    case 1800:
-    	return B1800;
-    case 2400:
-    	return B2400;
-    case 4800:
-    	return B4800;
-    case 9600:
-    	return B9600;
-    case 19200:
-        return B19200;
-    case 38400:
-        return B38400;
-    case 57600:
-        return B57600;
-    case 115200:
-        return B115200;
-    case 230400:
-        return B230400;
-    case 460800:
-        return B460800;
-    case 500000:
-        return B500000;
-    case 576000:
-        return B576000;
-    case 921600:
-        return B921600;
-    case 1000000:
-        return B1000000;
-    case 1152000:
-        return B1152000;
-    case 1500000:
-        return B1500000;
-    case 2000000:
-        return B2000000;
-    case 2500000:
-        return B2500000;
-    case 3000000:
-        return B3000000;
-    default: 
-        DIE("ERROR: Baudrate not supported\n");
-	return -1;
-    }
 }
 
 void usage(FILE *fp, char *progname, int exit_code)
@@ -218,7 +165,7 @@ void parse_args(int argc, char **argv, struct cli_args *args)
     args->bytes_time_interval_us = 1500;
     args->low_latency = false;
 
-    while ((opt = getopt_long(argc, argv, "ho:p:s:P:S:b:l", long_options, NULL)) >= 0) {
+    while ((opt = getopt_long(argc, argv, "ho:p:s:P:S:b:lt:", long_options, NULL)) >= 0) {
         switch (opt) {
         case 'o':
             args->output_file = optarg;
@@ -354,8 +301,8 @@ void configure_serial_port(int fd, const struct cli_args *args)
     tty.c_cc[VMIN] = 0;
 
     /* set port speed */
-    cfsetispeed(&tty, get_baud(args->speed));
-    cfsetospeed(&tty, get_baud(args->speed));
+    cfsetispeed(&tty, args->speed);
+    cfsetospeed(&tty, args->speed);
 
     if (tcsetattr(fd, TCSANOW, &tty) < 0)
         DIE("tcsetattr");
@@ -416,8 +363,10 @@ FILE *open_logfile(const char *path)
     return fp;
 }
 
-void signal_handler()
+void signal_handler(int signum)
 {
+    (void)signum;
+    
     rotate_log = 1;
 }
 
